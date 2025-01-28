@@ -1,0 +1,24 @@
+# This file will not change in between data versions
+# This file will be read, merged and written in MLFlow
+categorical_features:
+- job
+- marital
+- education
+- default
+- housing
+- loan
+- comm_type
+- comm_month
+- comm_day
+- last_outcome
+numerical_features:
+- age
+- curr_n_contact
+- days_since_last_campaign
+- last_n_contact
+- emp.var.rate
+- cons.price.idx
+- cons.conf.idx
+- euribor3m
+- nr.employed
+predicted_target: curr_outcome

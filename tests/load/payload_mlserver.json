@@ -1,0 +1,194 @@
+{
+    "inputs": [
+        {
+            "name": "job",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "admin."
+            ]
+        },
+        {
+            "name": "marital",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "married"
+            ]
+        },
+        {
+            "name": "education",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "university.degree"
+            ]
+        },
+        {
+            "name": "default",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "yes"
+            ]
+        },
+        {
+            "name": "housing",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "yes"
+            ]
+        },
+        {
+            "name": "loan",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "yes"
+            ]
+        },
+        {
+            "name": "comm_type",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "telephone"
+            ]
+        },
+        {
+            "name": "age",
+            "datatype": "INT64",
+            "shape": [
+                1
+            ],
+            "data": [
+                35
+            ]
+        },
+        {
+            "name": "curr_n_contact",
+            "datatype": "INT64",
+            "shape": [
+                1
+            ],
+            "data": [
+                1
+            ]
+        },
+        {
+            "name": "days_since_last_campaign",
+            "datatype": "INT64",
+            "shape": [
+                1
+            ],
+            "data": [
+                999
+            ]
+        },
+        {
+            "name": "last_n_contact",
+            "datatype": "INT64",
+            "shape": [
+                1
+            ],
+            "data": [
+                1
+            ]
+        },
+        {
+            "name": "emp.var.rate",
+            "datatype": "FP64",
+            "shape": [
+                1
+            ],
+            "data": [
+                -1.8
+            ]
+        },
+        {
+            "name": "cons.price.idx",
+            "datatype": "FP64",
+            "shape": [
+                1
+            ],
+            "data": [
+                92.893
+            ]
+        },
+        {
+            "name": "cons.conf.idx",
+            "datatype": "FP64",
+            "shape": [
+                1
+            ],
+            "data": [
+                -46.2
+            ]
+        },
+        {
+            "name": "euribor3m",
+            "datatype": "FP64",
+            "shape": [
+                1
+            ],
+            "data": [
+                1.313
+            ]
+        },
+        {
+            "name": "nr.employed",
+            "datatype": "FP64",
+            "shape": [
+                1
+            ],
+            "data": [
+                5099.1
+            ]
+        },
+        {
+            "name": "comm_month",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "may"
+            ]
+        },
+        {
+            "name": "comm_day",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "mon"
+            ]
+        },
+        {
+            "name": "last_outcome",
+            "datatype": "BYTES",
+            "shape": [
+                1
+            ],
+            "data": [
+                "success"
+            ]
+        }
+    ]
+}

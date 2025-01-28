@@ -1,0 +1,12 @@
+# This file is to indicate we want to install the local bank module
+# in our environment.
+# Implementation detail: we add the -c because pip-tools AND pip 
+#                        try to resolve dependencies again, even
+#                        if pip-tools already has set the version
+#                        constraints.
+#                        This must be a bug from either pip or pip-tools.
+# Implementation detail: all.requirements.txt must be generated before
+#                        this file is picked up by pip-tools.
+-c all.requirements.txt
+# The file: allows us to avoid having absolute paths
+-e file:.[all,testing]

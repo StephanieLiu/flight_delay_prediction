@@ -1,0 +1,31 @@
+# This file is meant to be used as an "override" for the docker-compose file.
+# That is, it contains alterations to the docker-compose file that are specific
+# to the GCP production environment.
+#
+# You can use the `!override` tag to indicate that the value should be overriden rather than merged.
+# Without !override, "ports" would be appended which would cause issues.
+#
+# Notice that the volumes mounts are also paths inside the VM:
+# We need a way to push our assets to that VM
+services:
+  client:
+    image: northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-client
+    ports: !override
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - /home/ivamlops/ivamlops/data:/data:ro
+  mlserver:
+    image: northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-mlserver
+  mlserver_canary:
+    image: northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-mlserver
+  reverse-proxy:
+    ports: !override
+      - "127.0.0.1:8500:80"
+    volumes:
+      - /home/ivamlops/ivamlops/nginx.conf:/etc/nginx/nginx.conf:ro
+  minio:
+    ports: !override
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9443:9443"
+    environment:
+      - MINIO_BROWSER_REDIRECT_URL=https://minio.${PARTICIPANT_STR:?}.labs.ivamlops.ca/ui

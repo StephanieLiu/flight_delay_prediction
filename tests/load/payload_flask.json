@@ -1,0 +1,92 @@
+{
+    "comm_date": [
+        "2010-08-11"
+    ],
+    "comm_year": [
+        "2010"
+    ],
+    "comm_month": [
+        "aug"
+    ],
+    "comm_day": [
+        "wed"
+    ],
+    "comm_type": [
+        "cellular"
+    ],
+    "curr_outcome": [
+        null
+    ],
+    "comm_duration": [
+        null
+    ],
+    "curr_n_contact": [
+        1
+    ],
+    "days_since_last_campaign": [
+        3
+    ],
+    "last_n_contact": [
+        1
+    ],
+    "last_outcome": [
+        "success"
+    ],
+    "customer_id": [
+        "468000fa-3ce5-48a6-a708-7a3473e0cfbc"
+    ],
+    "id": [
+        "468000fa-3ce5-48a6-a708-7a3473e0cfbc"
+    ],
+    "first_name": [
+        "Shanie"
+    ],
+    "last_name": [
+        "Armstrong"
+    ],
+    "email": [
+        "shanie.armstrong@gmail.com"
+    ],
+    "phone": [
+        "514-744-0825"
+    ],
+    "age": [
+        58
+    ],
+    "job": [
+        "blue-collar"
+    ],
+    "marital": [
+        "married"
+    ],
+    "education": [
+        "basic.4y"
+    ],
+    "date": [
+        "2010-08-11"
+    ],
+    "emp.var.rate": [
+        -1.7
+    ],
+    "cons.price.idx": [
+        94.03
+    ],
+    "cons.conf.idx": [
+        -38.3
+    ],
+    "euribor3m": [
+        0.9
+    ],
+    "nr.employed": [
+        4991.6
+    ],
+    "housing": [
+        "yes"
+    ],
+    "loan": [
+        "no"
+    ],
+    "default": [
+        "unknown"
+    ]
+}
