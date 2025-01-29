@@ -8,6 +8,24 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error,me
 from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
+import logging
+import mlflow
+import os,sys
+# from mlflow.models.signature import infer_signature
+
+# Get the current directory path
+current_directory = os.getcwd()
+
+# Get the grandparent directory
+grandparent_dir = os.path.abspath(os.path.join(current_directory, '..', 'src'))
+
+# Add the parent directory to sys.path
+parent_dir = os.path.join(grandparent_dir, 'flight_delay')
+sys.path.append(parent_dir)
+sys.path.append(os.path.join(parent_dir, 'helpers'))
+import utils
+
+logger = logging.getLogger('train_utils')
 
 
 def mark_outliers_by_category(df, category_column, value_column):
@@ -64,3 +82,61 @@ def train_model(regressor, pre_processor, X_train, y_train):
     ])
     model = model_pipeline.fit(X_train,y_train)
     return model
+
+        
+def evaluate_model(model,X_train, y_train,X_test,y_test):
+    y_train_predictions = model.predict(X_train)
+    MAE_train = mean_absolute_error(y_train,y_train_predictions)
+
+    y_test_predictions = model.predict(X_test)
+    MAE_test = mean_absolute_error(y_test,y_test_predictions)
+
+    metrics = {
+        "MAE_train" : MAE_train,
+        "MAE_test" : MAE_test
+    }
+
+    return metrics
+
+def train_model_with_tracking(experiment,regressor,regressor_name, X_train, y_train,X_test,y_test,categorical_cols, numerical_cols, time_cols, passthrough_cols):
+    
+    results = []
+    mlflow.set_tracking_uri(experiment.tracking_server_uri)
+    experiment_id = mlflow.set_experiment(experiment.name).experiment_id
+    logger.info('Training and evaluation for regressor: %s', regressor)
+    with mlflow.start_run(experiment_id=experiment_id, run_name=f"run_{regressor_name}_{utils.truncated_uuid4()}"):
+        mlflow.set_tag("regressor model", regressor_name)
+        try:
+            model_pipeline = Pipeline([
+            ("pre_processor", create_preprocess_pipeline(categorical_cols, numerical_cols, time_cols, passthrough_cols)),
+            ("regressor", regressor)
+        ])
+            model_pipeline.fit(X_train,y_train)
+            logger.info('Training completed for regressor: %s', regressor)
+        except Exception:
+            logger.exception('Error training regressor %s', regressor)
+
+        try:
+            evaluation_metrics = evaluate_model(model_pipeline,X_train, y_train,X_test,y_test)
+            results.append({'regressor': regressor_name, **evaluation_metrics})
+            logger.info(
+                'Evaluation completed for regressor: %s with metrics: %s',
+                regressor,
+                evaluation_metrics,
+            )
+            mlflow.log_metric("train MAE", evaluation_metrics['MAE_train'])
+            mlflow.log_metric("test MAE", evaluation_metrics['MAE_test'])
+
+            sample = X_train.sample(5)
+            # signature = infer_signature(sample, model_pipeline.predict(sample))
+            mlflow.sklearn.log_model(
+                    model_pipeline,
+                    artifact_path="regressor",
+                    input_example=sample,
+                    # signature=signature,
+                    extra_pip_requirements=["flight_delay"],
+                )
+        except Exception:
+            logger.exception('Error evaluating regressor %s', regressor_name)
+
+    return results
