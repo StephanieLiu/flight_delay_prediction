@@ -1,0 +1,29 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+#########################################
+# Suggested step 1: Install requirements
+#########################################
+COPY server_app/requirements.txt /app/server_app.requirements.txt
+COPY setup.cfg setup.py pyproject.toml /app/
+RUN mkdir /app/src && pip install --no-cache-dir '.' -r /app/server_app.requirements.txt && rm -r /app/src
+
+COPY src /app/src
+RUN pip install --no-cache-dir --no-deps .
+
+#########################################
+# Suggested step 2: Add application
+#########################################
+COPY server_app /app/server_app
+
+#########################################
+# Suggested step 3: Configure runtime
+#########################################
+WORKDIR /app/server_app
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ENV FLASK_ENV=production
+
+VOLUME [ "/models" ]
+
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "1", "app:app", "--access-logfile", "-"]

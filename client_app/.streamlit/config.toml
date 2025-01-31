@@ -1,0 +1,8 @@
+[browser]
+gatherUsageStats = false
+
+# Consider adding this, since by default streamlit binds on all interfaces
+# You can also set in the the "user" "global" configuration:
+#       ~/.streamlit/config
+# [server]
+# address = "127.0.0.1"

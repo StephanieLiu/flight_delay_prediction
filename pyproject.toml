@@ -1,0 +1,128 @@
+# Copyright (c) 2024 Houssem Ben Braiek, Emilio Rivera-Landos, IVADO, SEMLA
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
+
+
+[project]
+name = "bank_marketing"
+version = "2024.10"
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.pytest]
+log_cli = 1
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+# We select almost everything by default.
+# You are expected to add/remove what you find relevant
+select = [
+    "E",
+    "D",
+    "F",
+    "W",
+    "I",
+    "N",
+    "UP",
+    "S",
+    "B",
+    "A",
+    "C4",
+    "DTZ",
+    "EXE",
+    "ISC",
+    "G",
+    "PIE",
+    "T20",
+    "PYI",
+    "PT",
+    "Q",
+    "RET",
+    "SIM",
+    "PTH",
+    "PD",
+    "NPY",
+    "TRY",
+    "PERF",
+    "RUF",
+]
+ignore = [
+    # TODO: You should consider turning them on
+    "D100",
+    "D101",
+    "D103",
+    "D104",
+    "PD901", # Ignore variables named "df"
+    "PD015", # Ignore pd.merge
+    "T201",
+    "TRY003",
+    "TRY300",
+    "RUF005",
+    "RET504", # This should be re-enabled at some point
+    "RET505", # This should be re-enabled at some point
+    "S113", # This should be re-enabled at some point
+    "S101", # For tests, there are other options to achieve the same result, but wtv
+    "E402", # There are some cases where we want to do imports in between (namely for loading env variables)
+    # The following are recommended to be disabled when using the ruff formatter,
+    # Source: https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
+    "W191",
+    "E111",
+    "E114",
+    "E117",
+    "D206",
+    "D300",
+    "Q000",
+    "Q001",
+    "Q002",
+    "Q003",
+    "COM812",
+    "COM819",
+    "ISC001",
+    "ISC002",
+]
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.ipynb" = ["E501"] # Notebooks are more experimental and can have longer length
+"src/bank_marketing/sqlite_db/bank_marketing_DAL.py" = [
+    "E501", # Long SQL lines
+    "D107",
+]
+[tool.ruff.lint.pep8-naming]
+# We use "X" quite a bit
+extend-ignore-names = [
+    "X",
+    "*_X",
+    "*_X_*",
+    "DAL",
+    "*_DAL",
+    "*_DAL_*",
+]
+
+[tool.ruff.lint.flake8-builtins]
+builtins-ignorelist = ["id"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "single"

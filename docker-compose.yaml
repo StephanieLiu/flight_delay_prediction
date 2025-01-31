@@ -1,0 +1,209 @@
+services:
+  # ----------------------------------------
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+      tags:
+        - northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-client:latest
+        - northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-client${TAG}
+    image: ivamlops-client${TAG}
+    ports:
+      - "127.0.0.1:8501:8501"
+    environment:
+      # The key for mlserver to use both models even though they point to different mlflow URIs
+      # is to use the same MLServer Model Name (.name in the model-settings.json file)
+      - SERVER_API_URL=http://reverse-proxy/v2/models/camp-accept-predictor-production/infer
+      - FSSPEC_S3_KEY=${MINIO_ACCESS_KEY}
+      - FSSPEC_S3_SECRET=${MINIO_SECRET_KEY}
+      - FSSPEC_S3_ENDPOINT_URL=http://minio:9000/
+      - BANK_DB=s3://flight-delay/data/start.db
+      - ECO_SOCIO_DF=s3://flight-delay/data/external/socio_economic_indices_data.csv
+      - FUTURE_RES_DF=s3://flight-delay/data/external/campaign_results_data.csv
+    working_dir: /app/client_app
+    command: streamlit run app.py
+    depends_on:
+      - reverse-proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stscore/health"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+  # ----------------------------------------
+  reverse-proxy:
+    image: nginx:alpine
+    ports:
+      - 127.0.0.1:8500:80
+    configs:
+      - source: nginx_conf
+        target: /etc/nginx/nginx.conf
+    depends_on:
+      - mlserver
+      - mlserver_canary
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+  # ----------------------------------------
+  minio:
+    image: minio/minio
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9443:9443"
+    command: server /data --console-address :9443
+    environment:
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1
+      interval: 1s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+  # ----------------------------------------
+  sql_db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_USER=${SQL_USER}
+      - POSTGRES_PASSWORD=${SQL_PASSWORD}
+      - POSTGRES_DB=${SQL_DATABASE} 
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+  # ---------------------------------------- 
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    command: >
+          mlflow server 
+          --backend-store-uri postgresql+psycopg2://${SQL_USER}:${SQL_PASSWORD}@sql_db:5432/${SQL_DATABASE} 
+          --artifacts-destination ${ARTIFACT_ROOT} 
+          --host ${MLFLOW_SERVER_ADDRESS} 
+          --port ${MLFLOW_SERVER_PORT} 
+          --app-name basic-auth
+    depends_on:
+      - minio
+      - sql_db
+    ports:
+      - "127.0.0.1:7000:7000"
+    environment:
+      - MLFLOW_S3_ENDPOINT_URL=http://minio:9000
+      - AWS_ACCESS_KEY_ID=${MINIO_ACCESS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${MINIO_SECRET_KEY}
+      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USER}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASS}
+    deploy:
+      resources:
+        limits:
+          cpus: '0.75'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+      restart_policy:
+        condition: any
+        delay: 5s
+  # ----------------------------------------
+  mlserver:
+    build:
+      # Note: we could use the "mlserver" directory as the context
+      context: .
+      dockerfile: Dockerfile.mlserver
+      tags:
+        - northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-mlserver:latest
+        - northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-mlserver${TAG}
+    image: ivamlops-mlserver
+    ports:
+      - 127.0.0.1:8080:8080 # HTTP
+      - 127.0.0.1:8081:8081 # gRPC
+      - 127.0.0.1:8082:8082 # Metrics server
+    environment:
+      # - MLFLOW_TRACKING_URI=${MLFLOW_URI:?}
+      - MLFLOW_TRACKING_URI=http://mlflow:7000
+      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USER}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASS}
+      - MODEL_NAME=camp-accept-predictor-production
+      - MODEL_ALIAS=active
+      # https://mlserver.readthedocs.io/en/latest/user-guide/parallel-inference.html
+      - MLSERVER_PARALLEL_WORKERS=0
+      # https://mlserver.readthedocs.io/en/latest/user-guide/adaptive-batching.html
+      - MLSERVER_MODEL_MAX_BATCH_SIZE=16
+      # - MLSERVER_MODEL_MAX_BATCH_TIME=0.5
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - "MLSERVER_cors_settings={\"allow_origins\": [\"*\"], \"allow_methods\": [\"GET\",\"POST\"]}"
+    configs:
+      - source: mlserver_config
+        target: /opt/mlserver/model-settings.json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/v2/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mlserver_canary:
+    extends: mlserver
+    environment:
+      - MODEL_NAME=camp-accept-predictor
+      - MODEL_ALIAS=staging
+    # Override because there would be a port conflict
+    ports: !override []
+    configs:
+      - source: mlserver_canary_config
+        target: /opt/mlserver/model-settings.json
+volumes:
+  minio_data:
+  postgres_data: 
+configs:
+  nginx_conf:
+    file: ./nginx.conf
+  mlserver_canary_config:
+    # Read the documentation for the model-settings.json file
+    content: |
+      {
+        "name": "camp-accept-predictor-production",
+        "implementation": "mlserver_mlflow.MLflowRuntime",
+        "parameters": {
+          "uri": "models:/camp-accept-predictor@staging"
+        }
+      }
+  mlserver_config:
+    # Read the documentation for the model-settings.json file
+    content: |
+      {
+        "name": "camp-accept-predictor-production",
+        "implementation": "mlserver_mlflow.MLflowRuntime",
+        "parameters": {
+          "uri": "models:/camp-accept-predictor-production@active"
+        }
+      }
+

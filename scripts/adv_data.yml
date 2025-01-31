@@ -1,0 +1,24 @@
+person_info_cat_features:
+- job
+- marital
+- education
+- default
+- housing
+- loan
+- comm_type
+person_info_num_features:
+- age
+predicted_target: curr_outcome
+wo_customer_cat_features:
+- comm_month
+- comm_day
+- last_outcome
+wo_customer_num_features:
+- curr_n_contact
+- days_since_last_campaign
+- last_n_contact
+- emp.var.rate
+- cons.price.idx
+- cons.conf.idx
+- euribor3m
+- nr.employed

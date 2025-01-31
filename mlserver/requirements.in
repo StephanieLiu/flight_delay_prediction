@@ -1,0 +1,4 @@
+mlserver>=1.6.0
+mlserver-sklearn
+scikit-learn
+mlserver-mlflow

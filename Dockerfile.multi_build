@@ -1,0 +1,51 @@
+############################################
+# Shared package build
+############################################
+FROM python:3.10-slim AS shared_pkg_builder
+
+WORKDIR /build
+
+RUN python3 -m pip install --no-cache-dir build
+COPY pyproject.toml setup.cfg setup.py pytest.ini ./
+COPY src src
+RUN python -m build --wheel
+# DEV NOTE: To use this layer, you can do the following:
+#   COPY --from=shared_pkg_builder /build/dist/*.whl /dist/
+#   RUN python3 -m pip install --no-cache-dir /dist/*.whl
+# The wheel does not contain the dependencies, but they will
+# be marked to be installed when you install the wheel.
+
+
+############################################
+# Server build
+############################################
+FROM python:3.10-slim AS server
+
+WORKDIR /app
+COPY server_app/requirements.txt /app/server_app.requirements.txt
+COPY --from=shared_pkg_builder /build/dist/*.whl /dist/
+RUN python3 -m pip install --no-cache-dir -r server_app.requirements.txt /dist/*.whl
+COPY server_app server_app
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ENV FLASK_ENV=production
+
+VOLUME [ "/models" ]
+
+CMD [ "python3", "-m", "flask", "run" ]
+
+############################################
+# Client build
+############################################
+FROM python:3.10-slim AS client
+WORKDIR /app
+COPY client_app/requirements.txt /app/client_app.requirements.txt
+COPY --from=shared_pkg_builder /build/dist/*.whl /dist/
+RUN python3 -m pip install --no-cache-dir -r client_app.requirements.txt /dist/*.whl
+COPY client_app client_app
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+VOLUME [ "/data" ]
+
+CMD [ "python3", "-m", "streamlit", "run", "app.py" ]

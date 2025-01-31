@@ -1,0 +1,10 @@
+jupyterlab
+python-dotenv
+seaborn~=0.13.2
+joblib~=1.4.2
+pandas
+numpy
+matplotlib
+scikit-learn
+xgboost
+feature_engine

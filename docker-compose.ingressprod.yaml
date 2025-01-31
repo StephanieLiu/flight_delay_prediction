@@ -1,0 +1,47 @@
+
+services:
+  # You don't need to change anything below this line
+  # ----------------------------------------
+  # Ingress is the one to bind to 0.0.0.0
+  ingress:
+    ports:
+      - 80:80
+      - 443:443
+    image: nginx:alpine
+    configs:
+      - source: nginx_ingress_conf
+        target: /etc/nginx/templates/nginx.conf.template
+      - source: nginx_ingress_vouch_conf
+        target: /etc/nginx/templates/nginx-ingress-vouch.conf.template
+    environment:
+      - NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx
+      - PARTICIPANT_STR=${PARTICIPANT_STR:?}
+    volumes:
+      - /home/ivamlops/ivamlops/certificates/privkey.pem:/etc/nginx/ssl/nginx.key:ro
+      - /home/ivamlops/ivamlops/certificates/fullchain.pem:/etc/nginx/ssl/nginx.crt:ro
+    depends_on:
+      - vouch
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+  vouch:
+    image: quay.io/vouch/vouch-proxy:0.41.0
+    ports: !override []
+    expose:
+      - "9090"
+    env_file:
+      - .env.ingressprod
+    environment:
+      - VOUCH_DOMAINS=${PARTICIPANT_STR:?}.labs.ivamlops.ca
+      - VOUCH_COOKIE_DOMAIN=${PARTICIPANT_STR:?}.labs.ivamlops.ca
+      - OAUTH_CALLBACK_URLS=https://vouch.${PARTICIPANT_STR:?}.labs.ivamlops.ca/auth
+      - VOUCH_WHITELIST=${PARTICIPANT_EMAIL:?}
+      - OAUTH_PROVIDER=google
+      - VOUCH_COOKIE_SECURE=true
+configs:
+  nginx_ingress_conf:
+    file: /home/ivamlops/ivamlops/nginx-ingress.conf.template
+  nginx_ingress_vouch_conf:
+    file: /home/ivamlops/ivamlops/nginx-ingress-vouch.conf.template
+

@@ -1,0 +1,28 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+#########################################
+# Suggested step 1: Install requirements
+#########################################
+COPY client_app/requirements.txt /app/client_app.requirements.txt
+COPY setup.cfg setup.py pyproject.toml /app/
+RUN mkdir /app/src && pip install --no-cache-dir '.' -r /app/client_app.requirements.txt && rm -r /app/src
+
+COPY src /app/src
+RUN pip install --no-cache-dir --no-deps .
+
+#########################################
+# Suggested step 2: Add application
+#########################################
+COPY client_app /app/client_app
+
+#########################################
+# Suggested step 3: Configure runtime
+#########################################
+
+WORKDIR /app/client_app
+VOLUME [ "/data" ]
+ENV STREAMLIT_SERVER_ADDRESS="0.0.0.0"
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+CMD [ "streamlit", "run", "app.py" ]

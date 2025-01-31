@@ -1,0 +1,36 @@
+############################################
+# Shared package build
+############################################
+FROM python:3.10-slim AS shared_pkg_builder
+
+WORKDIR /build
+
+RUN python3 -m pip install --no-cache-dir build
+COPY pyproject.toml setup.cfg setup.py pytest.ini ./
+COPY src src
+RUN python -m build --wheel
+# DEV NOTE: To use this layer, you can do the following:
+#   COPY --from=shared_pkg_builder /build/dist/*.whl /dist/
+#   RUN python3 -m pip install --no-cache-dir /dist/*.whl
+# The wheel does not contain the dependencies, but they will
+# be marked to be installed when you install the wheel.
+
+
+############################################
+# Shared package build
+############################################
+FROM seldonio/mlserver:1.6.1-slim AS mlserver
+
+COPY requirements.txt /tmp/bm.requirements.txt
+COPY mlserver/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+COPY --from=shared_pkg_builder /build/dist/*.whl /dist/
+RUN python3 -m pip install --no-cache-dir /dist/*.whl -c /tmp/bm.requirements.txt
+# Note that MLServer has its working directory set to /opt/mlserver
+
+# Interestingly we still need to set this since the base image does not set it
+CMD [ "mlserver", "start", "." ]
+
+# Set a default target for the build
+FROM mlserver

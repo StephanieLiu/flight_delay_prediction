@@ -1,0 +1,6 @@
+python-dotenv
+flask~=3.0.3
+flask_restful~=0.3.10
+joblib~=1.4.2
+gunicorn
+pandas

@@ -1,0 +1,164 @@
+.DEFAULT_GOAL := help
+
+#########################################
+# VARIABLES AND CONSTANTS
+#########################################
+PYTHON ?= .venv/bin/python
+GLOBAL_PYTHON ?= python3
+PIP_COMPILE ?= pip-compile
+JUPYTER ?= jupyter
+
+#########################################
+# DEV SETUP
+#########################################
+# Outputs with color
+.PHONY: dev-install
+dev-install:
+	./scripts/dev-setup.sh
+	@echo
+	@echo "==> $(shell tput setaf 2)Dev setup complete. Run 'source .venv/bin/activate' to activate the virtual environment.$(shell tput sgr0)"
+
+#########################################
+# TESTS
+#########################################
+.PHONY: test format-check format-fix format-preview lint-check lint-fix lint-preview
+test: ## Run tests
+	python -m pytest 
+
+#########################################
+# CODE QUALITY
+#########################################
+format-check: ## Check code style adherence
+	ruff format --check
+
+format-preview: ## Preview code style changes that would be made after running format-fix
+	ruff format --check --diff
+
+format-fix: ## Fix code style adherence
+	ruff format
+
+lint-check: ## Run lint checks
+	ruff check
+
+lint-preview: ## Preview lint errors that would be fixed after running lint-fix
+	ruff check --diff
+
+lint-fix:  ## Fix lint errors
+	ruff check --fix
+
+.PHONY: code-quality
+code-quality:
+	@echo "== Checking code style =="
+	$(MAKE) --no-print-directory format-check
+	@echo
+	@echo "== Checking lint errors =="
+	$(MAKE) --no-print-directory lint-check
+
+##############################################
+#
+# Requirements section
+#
+##############################################
+
+
+.PHONY: generate-requirements
+generate-requirements: requirements.txt $(addprefix requirements/, $(addsuffix .requirements.txt, all testing quality data-science)) requirements/local.txt
+
+# Note: there is a way to make this DRY, but it is less readable
+# and for code that doesn't change that much, such an approach
+# is too overkill and is actually counter productive.
+requirements/testing.requirements.txt: pyproject.toml setup.cfg setup.py
+	pip-compile --strip-extras --extra testing --output-file requirements/testing.requirements.txt
+
+requirements/quality.requirements.txt: pyproject.toml setup.cfg setup.py
+	pip-compile --strip-extras --extra quality --output-file requirements/quality.requirements.txt
+
+requirements/all.requirements.txt: pyproject.toml setup.cfg setup.py
+	pip-compile --strip-extras --extra all --output-file requirements/all.requirements.txt
+
+requirements.txt: pyproject.toml setup.cfg setup.py
+	pip-compile --strip-extras --extra all --output-file requirements.txt 
+
+requirements/data-science.requirements.txt: pyproject.toml setup.cfg setup.py
+	pip-compile --strip-extras --extra data-science --output-file requirements/data-science.requirements.txt
+
+requirements/local.txt: requirements/all.requirements.txt
+	pip-compile --strip-extras --output-file requirements/local.txt requirements/local.in
+
+# These commands are the most usable without pip tools.
+.PHONY: freeze-requirements-no-editable freeze-requirements-no-bank_marketing
+freeze-requirements-no-editable:
+	pip freeze --exclude-editable -l
+
+freeze-requirements-no-bank_marketing:
+	pip freeze --exclude bank_marketing -l
+
+
+
+#########################################
+# DATA SYNCHRONIZATION
+#########################################
+# Warning: Omission of trailing slash is important
+REVERSE_PROXY_ASSETS=nginx.conf
+INGRESS_ASSETS=nginx-ingress.conf.template nginx-ingress-vouch.conf.template
+VM_TARGET_SSH ?= ivamlops@ivamlops-deploy
+VM_TARGET_DIR ?= /home/ivamlops/ivamlops
+
+.PHONY: sync-gcpprod gcpprod-reverse-proxy sync-gcpprod-ingress sync-gcpprod-data sync-gcpprod-models
+
+# Sync everyhing
+sync-gcpprod: sync-gcpprod-reverse-proxy sync-gcpprod-ingress sync-gcpprod-data sync-gcpprod-models
+
+#########################################
+# DATA SCIENCE
+#########################################
+.PHONY: ds-launch-jupyter
+ds-launch-jupyter: ## Launch jupyter lab
+	$(PYTHON) -m jupyter lab --no-browser
+
+
+.PHONY: ds-run-notebook
+ds-run-notebook: ## Runs the notebook specified by NOTEBOOK
+	$(JUPYTER) nbconvert --execute $(or $(NOTEBOOK),$(error Specify a notebook to run with NOTEBOOK=./path/to/notebook)) --to notebook --inplace
+
+.PHONY: ds-quicktrain
+ds-quicktrain: NOTEBOOK ::= ./notebooks/Modeling_with_mlflow.ipynb
+ds-quicktrain: ds-run-notebook
+ds-quicktrain: ## Runs the Modeling notebook
+# Equivalent without variables:
+# jupyter nbconvert --execute notebooks/Modeling.ipynb --to notebook --inplace
+
+
+##########################
+# Individual sync targets
+##########################
+sync-gcpprod-data:
+	rsync $(if $(DRY_RUN),-n,) -av --mkpath ./data/ $(VM_TARGET_SSH):$(VM_TARGET_DIR)/data/
+
+sync-gcpprod-models:
+	rsync $(if $(DRY_RUN),-n,) -av --mkpath ./models/ $(VM_TARGET_SSH):$(VM_TARGET_DIR)/models/
+
+sync-gcpprod-reverse-proxy:
+	rsync $(if $(DRY_RUN),-n,) -av --mkpath $(REVERSE_PROXY_ASSETS) $(VM_TARGET_SSH):$(VM_TARGET_DIR)/
+
+sync-gcpprod-ingress:
+	rsync $(if $(DRY_RUN),-n,) -av --mkpath $(INGRESS_ASSETS) $(VM_TARGET_SSH):$(VM_TARGET_DIR)/
+
+##########################
+# PROD reloads
+##########################
+.PHONY: restart-reverse-proxy restart-ingressprod
+DOCKER_COMPOSE_GCPPROD ::= docker compose -f docker-compose.yaml -f docker-compose.gcpprod.yaml
+DOCKER_COMPOSE_INGRESSPROD ::= docker compose -f docker-compose.yaml -f docker-compose.gcpprod.yaml -f docker-compose.ingressprod.yaml
+restart-reverse-proxy: ## Update reverse proxy for server and server canary so it detects new instances
+	$(DOCKER_COMPOSE_GCPPROD) restart reverse-proxy --no-deps
+restart-ingressprod: ## Updates ingress so client redeployments are detected by ingress
+	$(DOCKER_COMPOSE_INGRESSPROD) restart ingress --no-deps
+
+#########################################
+# HELPERS
+#########################################
+.PHONY: help
+# Taken from: https://marmelab.com/blog/2016/02/29/auto-documented-makefile.html
+help:
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
