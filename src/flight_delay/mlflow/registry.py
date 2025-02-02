@@ -24,7 +24,7 @@ import mlflow.sklearn
 from sklearn.pipeline import Pipeline
 from mlflow.tracking import MlflowClient
 from mlflow.entities.run import Run
-from bank_marketing.mlflow.tracking import build_model_uri_from_run
+from flight_delay.mlflow.tracking import build_model_uri_from_run
 
 def get_all_model_versions(registry_uri:str, model_name:str) -> List[Dict]:
     mlflow.set_tracking_uri(registry_uri)
