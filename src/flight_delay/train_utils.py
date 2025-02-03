@@ -104,7 +104,7 @@ def train_model_with_tracking(experiment,regressor,regressor_name, X_train, y_tr
     mlflow.set_tracking_uri(experiment.tracking_server_uri)
     experiment_id = mlflow.set_experiment(experiment.name).experiment_id
     logger.info('Training and evaluation for regressor: %s', regressor)
-    with mlflow.start_run(experiment_id=experiment_id, run_name=f"run_{regressor_name}_{utils.truncated_uuid4()}"):
+    with mlflow.start_run(experiment_id=experiment_id, run_name=f"run_{regressor_name}_{utils.truncated_uuid4()}") as run:
         mlflow.set_tag("regressor model", regressor_name)
         try:
             model_pipeline = Pipeline([
