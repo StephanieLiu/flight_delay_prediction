@@ -1,6 +1,12 @@
 FROM python:3.10-slim
 
 WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
 #########################################
 # Suggested step 1: Install requirements
 #########################################
@@ -15,6 +21,7 @@ RUN pip install --no-cache-dir --no-deps .
 # Suggested step 2: Add application
 #########################################
 COPY client_app /app/client_app
+COPY data/flights_delay_dataset.csv /app/data/
 
 #########################################
 # Suggested step 3: Configure runtime

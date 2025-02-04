@@ -9,17 +9,17 @@ services:
         - northamerica-northeast1-docker.pkg.dev/${PROJECT_ID}/bank-marketing/ivamlops-client${TAG}
     image: ivamlops-client${TAG}
     ports:
-      - "127.0.0.1:8501:8501"
+      - "8501:8501"
     environment:
       # The key for mlserver to use both models even though they point to different mlflow URIs
       # is to use the same MLServer Model Name (.name in the model-settings.json file)
-      - SERVER_API_URL=http://reverse-proxy/v2/models/camp-accept-predictor-production/infer
+      - SERVER_API_URL=http://reverse-proxy/v2/models/lightGBM-production/infer
       - FSSPEC_S3_KEY=${MINIO_ACCESS_KEY}
       - FSSPEC_S3_SECRET=${MINIO_SECRET_KEY}
-      - FSSPEC_S3_ENDPOINT_URL=http://minio:9000/
+      - FSSPEC_S3_ENDPOINT_URL=http://minio:9000
       - BANK_DB=s3://flight-delay/data/start.db
       - ECO_SOCIO_DF=s3://flight-delay/data/external/socio_economic_indices_data.csv
-      - FUTURE_RES_DF=s3://flight-delay/data/external/campaign_results_data.csv
+      - FUTURE_RES_DF=s3://flight-delay/data/flights_delay_dataset.csv
     working_dir: /app/client_app
     command: streamlit run app.py
     depends_on:
@@ -32,16 +32,16 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
-          memory: 256M
+          cpus: '1.0'
+          memory: 2G
         reservations:
-          cpus: '0.25'
-          memory: 128M
+          cpus: '0.5'
+          memory: 1G
   # ----------------------------------------
   reverse-proxy:
     image: nginx:alpine
     ports:
-      - 127.0.0.1:8500:80
+      - 8500:80
     configs:
       - source: nginx_conf
         target: /etc/nginx/nginx.conf
@@ -60,8 +60,8 @@ services:
   minio:
     image: minio/minio
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9443:9443"
+      - 9000:9000
+      - 9443:9443
     command: server /data --console-address :9443
     environment:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
@@ -185,7 +185,7 @@ volumes:
   postgres_data: 
 configs:
   nginx_conf:
-    file: ./nginx.conf
+    file: /home/ivamlops/ivamlops/nginx.conf
   mlserver_canary_config:
     # Read the documentation for the model-settings.json file
     content: |
