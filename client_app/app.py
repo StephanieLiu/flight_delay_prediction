@@ -18,274 +18,367 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import os
-
+import sys, os
 from dotenv import load_dotenv
 load_dotenv()
-import fsspec
-import fsspec.implementations.local
-from pathlib import Path
-import numpy as np
 import pandas as pd
-import requests
 import streamlit as st
-from PIL import Image
+import fsspec
+import requests
+import json
 
-from bank_marketing.data.make_datasets import extract_credit_features, merge_defaults
-from bank_marketing.sqlite_db.bank_marketing_DAL import BankMarketingDAL
-from bank_marketing.helpers.file_loaders import load_fsspec_locally_temp
 
-# Data sources
+current_directory = os.getcwd()
+
+# Get the grandparent directory
+grandparent_dir = os.path.abspath(os.path.join(current_directory, '..', 'src'))
+sys.path.append(grandparent_dir)
+
+from flight_delay import train_utils,features
+from flight_delay.mlflow.registry import load_model
+
 SERVER_API_URL = os.environ.get('SERVER_API_URL')
-BANK_DB = os.environ.get('BANK_DB')
-ECO_SOCIO_DF = os.environ.get('ECO_SOCIO_DF')
 FUTURE_RES_DF = os.environ.get('FUTURE_RES_DF')
-# --- APP SETTINGS ---
-DISPLAYED_ATTRIBUTES = [
-    'first_name',
-    'last_name',
-    'job',
-    'age',
-    'education',
-    'marital',
-    'housing',
-    'loan',
-    'phone',
-]
+FSSPEC_S3_KEY = os.environ.get('FSSPEC_S3_KEY')
+FSSPEC_S3_SECRET = os.environ.get('FSSPEC_S3_SECRET')
+FSSPEC_S3_ENDPOINT_URL = os.environ.get('FSSPEC_S3_ENDPOINT_URL')
 
-# --- PATH SETTINGS ---
-current_dir = Path(__file__).parent if '__file__' in locals() else Path.cwd()
-css_file = current_dir / 'styles' / 'main.css'
-# -------------- SETTINGS --------------
-page_title = 'Advertising Phone Campaign'
-page_icon = ':telephone:'  # emojis: https://www.webfx.com/tools/emoji-cheat-sheet/
+# Add MLflow environment variables
+MLFLOW_TRACKING_URI = os.environ.get('MLFLOW_TRACKING_URI')
+MLFLOW_TRACKING_USERNAME = os.environ.get('MLFLOW_TRACKING_USERNAME')
+MLFLOW_TRACKING_PASSWORD = os.environ.get('MLFLOW_TRACKING_PASSWORD')
+
+@st.cache_resource
+def connect_to_data(data_path):
+    try:
+        fs = fsspec.filesystem(
+            's3',
+            key=FSSPEC_S3_KEY,
+            secret=FSSPEC_S3_SECRET,
+            endpoint_url=FSSPEC_S3_ENDPOINT_URL,
+            client_kwargs={'endpoint_url': FSSPEC_S3_ENDPOINT_URL}
+        )
+        
+        # List buckets to verify connection
+        #st.write("Available buckets:", fs.ls(''))
+        
+        # Get bucket and path
+        bucket = data_path.split('/')[2]
+        path = '/'.join(data_path.split('/')[3:])
+        
+        # List contents of bucket
+        #st.write(f"Contents of bucket '{bucket}':", fs.ls(bucket))
+        
+        # Full path for debugging
+        full_path = f"{bucket}/{path}"
+        #st.write(f"Attempting to open: {full_path}")
+        
+        # Read data in chunks with a progress bar
+        with st.spinner('Loading data... This might take a while...'):
+            chunks = []
+            with fs.open(full_path) as f:
+                # Read in chunks of 100,000 rows
+                for chunk in pd.read_csv(f, chunksize=100000):
+                    chunks.append(chunk)
+            
+            # Combine all chunks
+            data = pd.concat(chunks, ignore_index=True)
+            
+        return data
+    except Exception as e:
+        st.error(f"Connection error: {str(e)}")
+        st.error(f"Full error details: {repr(e)}")
+        raise
+
+
+def get_model_predictions(data: pd.DataFrame):
+    """
+    Get predictions using model loaded directly from MLflow
+    """
+    try:
+        # Load the model from MLflow registry
+        model = load_model(
+            registry_uri=MLFLOW_TRACKING_URI,
+            model_name="lightGBM-production",  # Use your model name
+            model_alias="active"  # Or specific version if needed
+        )
+        
+        # Make predictions
+        predictions = model.predict(data)
+        return predictions
+        
+    except Exception as e:
+        st.error(f"Error loading model from MLflow: {str(e)}")
+        st.error(f"Full error details: {repr(e)}")
+        raise
+
+# --- APP SETTINGS ---
+page_title = 'Flight Delay Prediction'
+page_icon = '✈️'
 layout = 'wide'
 
 # --------- Page SETUP -----------
 st.set_page_config(page_title=page_title, page_icon=page_icon, layout=layout)
-# --- LOAD CSS ---
-with css_file.open() as f:
-    st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
 
-@st.cache_resource
-def connect_to_data(bank_db_file, eco_socio_data_file, future_results_data_file):
-    # Detect if bank_db_file is local or not, so we can acquire (download)
-    # the file if remote.
-    db_url = bank_db_file
-    _db = fsspec.open(bank_db_file)
-    db_downloaded_file = None
-    if not isinstance(_db.fs, fsspec.implementations.local.LocalFileSystem):
-        db_downloaded_file = load_fsspec_locally_temp(bank_db_file, binary=True)
-        db_url = db_downloaded_file.name
-    bank_marketing_dl = BankMarketingDAL(db_url)
-    # Load dataframes
-    with fsspec.open(eco_socio_data_file) as f:
-        socio_eco_indices_data = pd.read_csv(f, sep=";")
-    with fsspec.open(future_results_data_file) as f:
-        future_results_data = pd.read_csv(f, sep=";")
-    return bank_marketing_dl, socio_eco_indices_data, future_results_data
+# Custom CSS
+st.markdown("""
+<style>
+    .main {
+        padding: 0rem 1rem;
+    }
+    .title-container {
+        background-color: #f0f2f6;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 2rem;
+    }
+    .stAlert {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .chart-container {
+        background-color: white;
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .metric-card {
+        background-color: #ffffff;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    .metric-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #0066cc;
+    }
+    .metric-label {
+        font-size: 1rem;
+        color: #666;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-
-def build_features(bank_marketing_dl, socio_eco_indices_data):
-    current_date = st.session_state.current_date
-    loans_df = bank_marketing_dl.loans.fetch_all(to_dataframe=True)
-    mortgages_df = bank_marketing_dl.mortgages.fetch_all(to_dataframe=True)
-    mortgages_df[['housing', 'default']] = mortgages_df.apply(
-        extract_credit_features, axis=1, result_type='expand'
-    )
-    loans_df[['loan', 'default']] = loans_df.apply(
-        extract_credit_features, axis=1, result_type='expand'
-    )
-    customers_df = bank_marketing_dl.customers.fetch_all(to_dataframe=True)
-    campaign_missions_df = bank_marketing_dl.campaign_missions.fetch_by_date(
-        current_date, to_dataframe=True
-    )
-    dataframe = pd.merge(customers_df, campaign_missions_df, left_on='id', right_on='customer_id')
-    dataframe = pd.merge(dataframe, socio_eco_indices_data, left_on='comm_date', right_on='date')
-    dataframe = pd.merge(
-        dataframe, mortgages_df[['customer_id', 'housing', 'default']], on='customer_id'
-    )
-    dataframe = pd.merge(dataframe, loans_df[['customer_id', 'loan', 'default']], on='customer_id')
-    dataframe['default'] = dataframe.apply(merge_defaults, axis=1)
-    dataframe = dataframe.drop(columns=['default_x', 'default_y'])
-    return dataframe
-
-
-bank_marketing_dl, socio_eco_indices_data, future_results_data = connect_to_data(
-    BANK_DB, ECO_SOCIO_DF, FUTURE_RES_DF
-)
-
-if 'curr_mission_ord' not in st.session_state:
-    st.session_state.curr_mission_ord = 1
-
-if 'campaign_missions' not in st.session_state:
-    st.session_state.campaign_missions = []
-
-
-def precedent_mission(missions_total):
-    if st.session_state.curr_mission_ord > 1:
-        st.session_state.curr_mission_ord -= 1
-    elif st.session_state.curr_mission_ord == 1:
-        st.session_state.curr_mission_ord = missions_total
-
-
-def next_mission(missions_total):
-    if st.session_state.curr_mission_ord < missions_total:
-        st.session_state.curr_mission_ord += 1
-    elif st.session_state.curr_mission_ord == missions_total:
-        st.session_state.curr_mission_ord = 1
-
-
-def reload_campaign_missions():
-    ai_assistance = st.session_state.AI_assistance
-    current_date = st.session_state.current_date
-    if ai_assistance == 'Without' or ai_assistance == 'Partial':
-        st.session_state.campaign_missions = bank_marketing_dl.campaign_missions.fetch_by_date(
-            current_date, to_dict=True
-        )
-    elif ai_assistance == 'Full':
-        data_features = build_features(bank_marketing_dl, socio_eco_indices_data)
-        request_dict = {k: list(v.values()) for k, v in data_features.to_dict().items()}
-        response = requests.post(SERVER_API_URL, json=request_dict)
-        response_dict = {**request_dict, **response.json()}
-        response_data = pd.DataFrame.from_dict(response_dict)
-        success_data = response_data[response_data['prediction'] == 1]
-        st.session_state.campaign_missions = success_data[
-            bank_marketing_dl.campaign_missions.attrs
-        ].to_dict('records')
-
-
-profile_pic = current_dir / 'assets' / 'profile-pic.jpg'
-# ---- SIDEBAR ----
-profile_pic = Image.open(profile_pic)
-st.sidebar.image(profile_pic, width=120)
-st.sidebar.title('Employee Name')
-future_dates = np.unique(
-    [elt['comm_date'] for elt in bank_marketing_dl.campaign_missions.fetch_all_not_done(True)]
-).tolist()
-
-st.sidebar.selectbox('Date', future_dates, key='current_date')
-
-st.sidebar.radio(
-    'AI assistance',
-    ('Without', 'Partial', 'Full'),
-    key='AI_assistance',
-    on_change=reload_campaign_missions,
-)
-
-st.sidebar.button('Start', key='start', on_click=reload_campaign_missions)
-
-if st.session_state.campaign_missions:
-    campaign_missions_count = len(st.session_state.campaign_missions)
-    col1, _, col2, _, col3 = st.columns([2, 4, 2, 4, 2])
-    col2.write(
-        f'**< {st.session_state.curr_mission_ord}' + ' / ' + f'{campaign_missions_count} >**'
-    )
-    col1.button(
-        'Prev.', on_click=precedent_mission, key='previous', args=(campaign_missions_count,)
-    )
-    col3.button('Next', on_click=next_mission, key='next', args=(campaign_missions_count,))
-else:
-    st.header('Click on **Start** to fetch prospects...')
-
-if st.session_state.campaign_missions:
-    curr_mission = st.session_state.campaign_missions[st.session_state.curr_mission_ord - 1]
-    curr_customer = bank_marketing_dl.customers.fetch_one(curr_mission['customer_id'], True)
-
-    col1, col2, col3 = st.columns([6, 2, 1])
-    col1.title(f'Prospect: {curr_customer["first_name"]} {curr_customer["last_name"]}')
-    col2.text('')
-    col2.text('')
-    col2.text('')
-    AI_response = col2.empty()
-    if st.session_state.AI_assistance == 'Partial':
-        AI_response.text('AI Loading...')
-    elif st.session_state.AI_assistance == 'Full':
-        AI_response.markdown('**(AI Suggests: <g>CALL</g>)**', unsafe_allow_html=True)
-    col3.text('')
-    col3.text('')
-    call = col3.button('Call', key='call', args=())
-
-    if call:
-        curr_customer_outcome = future_results_data[
-            future_results_data['id'] == curr_mission['customer_id']
-        ].iloc[0]
-        answer = str(curr_customer_outcome['y'])
-        duration = curr_customer_outcome['duration']
-        if answer == 'yes':
-            st.success(f'SUCCESS: The call lasts {duration//60} mins; {duration%60} seconds')
-        elif answer == 'no':
-            st.error(f'FAILURE: The call that lasts {duration//60} mins; {duration%60} seconds')
-
-    st.text('')
-    col1, col2, col3 = st.columns(3)
+# Title section with description
+with st.container():
+    st.markdown('<div class="title-container">', unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 5])
     with col1:
-        st.markdown(f'Age: {curr_customer["age"]}')
-        st.markdown(f'Marital: {curr_customer["marital"]}')
-
+        st.markdown(f'<h1 style="font-size: 4rem">{page_icon}</h1>', unsafe_allow_html=True)
     with col2:
-        st.markdown(f'Mail: {curr_customer["email"]}')
-        st.markdown(f'Phone: {curr_customer["phone"]}')
+        st.title('Flight Delay Prediction')
+        st.markdown('Predict flight delays using machine learning')
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    with col3:
-        st.markdown(f'Job: {curr_customer["job"]}')
-        st.markdown(f'Education: {curr_customer["education"]}')
+# Data loading section
+with st.container():
+    try:
+        # Debug information
+        st.write("Getting data from:")
+        st.write(f"Data path: {FUTURE_RES_DF}")
+        st.write(f"MinIO endpoint: {FSSPEC_S3_ENDPOINT_URL}")
+        # st.write(f"Access key exists: {'Yes' if FSSPEC_S3_KEY else 'No'}")
+        # st.write(f"Secret key exists: {'Yes' if FSSPEC_S3_SECRET else 'No'}")
+        future_results_data = connect_to_data(FUTURE_RES_DF)
+        
+        # Display metrics in cards
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-value">{len(future_results_data):,}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">Total Flights</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-value">{future_results_data["AIRLINE"].nunique()}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">Airlines</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with col3:
+            st.markdown('<div class="metric-card">', unsafe_allow_html=True)
+            st.markdown(f'<div class="metric-value">{future_results_data["ORIGIN"].nunique()}</div>', unsafe_allow_html=True)
+            st.markdown('<div class="metric-label">Airports</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    st.divider()  # 👈 Another horizontal rule
-    st.subheader('Campaign Infos:')
-    st.text('')
-    col1, col2, col3 = st.columns([3, 1, 3])
-    with col1:
-        st.markdown(f'Ongoing number of contacts: {curr_mission["curr_n_contact"]}')
-        st.markdown(f'Preferred communication: {curr_mission["comm_type"]}')
+        # Sample data display
+        with st.expander("View Sample Data", expanded=False):
+            st.dataframe(future_results_data.head(10), use_container_width=True)
 
-    with col3:
-        pdays = curr_mission['days_since_last_campaign']
-        st.markdown(f'Days since last campaign: {"Non-Available" if pdays==999 else pdays}')
-        st.markdown(f'Last campaign number of contacts: {curr_mission["last_n_contact"]}')
-        st.markdown(f'Last campaign outcome: {curr_mission["last_outcome"]}')
+        # Debug information for columns
+        numerical_cols = features.numerical_cols
+        categorical_cols = features.categorical_cols
+        time_cols = features.time_cols
+        passthrough_cols = features.passthrough_cols
+        features_list = numerical_cols + categorical_cols + time_cols + passthrough_cols
 
-    st.divider()  # 👈 Another horizontal rule
-    st.subheader('Loans Data:')
-    st.text('')
-    loans_df = bank_marketing_dl.loans.fetch_by_customer(
-        curr_mission['customer_id'], to_dataframe=True
-    )
-    st.dataframe(loans_df.drop(columns=['customer_id']))
 
-    st.divider()  # 👈 Another horizontal rule
-    st.subheader('Mortgages Data:')
-    st.text('')
-    mortgages_df = bank_marketing_dl.mortgages.fetch_by_customer(
-        curr_mission['customer_id'], to_dataframe=True
-    )
-    st.dataframe(mortgages_df.drop(columns=['customer_id']))
+        # st.write("Debug: Available columns:", future_results_data.columns.tolist())
+        # st.write("Debug: Required columns:")
+        # st.write("- Numerical:", numerical_cols)
+        # st.write("- Categorical:", categorical_cols)
+        # st.write("- Time:", time_cols)
+        # st.write("- Passthrough:", passthrough_cols)
 
-    if st.session_state.AI_assistance == 'Partial':
-        mortgages_df[['housing', 'default']] = mortgages_df.apply(
-            extract_credit_features, axis=1, result_type='expand'
-        )
-        loans_df[['loan', 'default']] = loans_df.apply(
-            extract_credit_features, axis=1, result_type='expand'
-        )
-        merged_dict = {**curr_mission, **curr_customer}
-        data_features = pd.DataFrame().from_records([merged_dict])
-        data_features = pd.merge(
-            data_features, socio_eco_indices_data, left_on='comm_date', right_on='date'
-        )
-        data_features = pd.merge(
-            data_features, mortgages_df[['customer_id', 'housing', 'default']], on='customer_id'
-        )
-        data_features = pd.merge(
-            data_features, loans_df[['customer_id', 'loan', 'default']], on='customer_id'
-        )
-        data_features['default'] = data_features.apply(merge_defaults, axis=1)
-        data_features = data_features.drop(columns=['default_x', 'default_y'])
-        request_dict = {k: list(v.values()) for k, v in data_features.to_dict().items()}
-        response = requests.post(SERVER_API_URL, json=request_dict)
-        response_dict = response.json()
-        suggestion = '<g>CALL</g>' if response_dict['prediction'][0] == 1 else '<r>SKIP</r>'
-        AI_response.markdown(
-            f'**(AI Suggests: {suggestion})**',
-            unsafe_allow_html=True,
-        )
+        # Verify all required columns exist
+        missing_cols = []
+        for col in numerical_cols + categorical_cols + time_cols + passthrough_cols:
+            if col not in future_results_data.columns:
+                missing_cols.append(col)
+            
+        if missing_cols:
+            st.error(f"Missing required columns: {missing_cols}")
+
+        # Predictions section
+        if not missing_cols:
+            with st.container():
+                with st.spinner('Making predictions...'):
+                    future_results_data_sample = future_results_data.sample(1000)
+                    predictions = get_model_predictions(future_results_data_sample)
+                    future_results_data_sample['predicted_delay'] = predictions
+
+                # Results in tabs
+                tab1, tab2 = st.tabs(["📊 Delay Analysis", "📋 Detailed Results"])
+                
+                with tab1:
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    st.subheader("Average Predicted Delay by Airline")
+                    
+                    # Calculate and display average delays
+                    avg_delay_by_airline = (
+                        future_results_data_sample
+                        .groupby('AIRLINE')['predicted_delay']
+                        .agg(['mean', 'count'])
+                        .round(2)
+                        .reset_index()
+                    )
+                    avg_delay_by_airline.columns = ['Airline', 'Average Delay (minutes)', 'Number of Flights']
+                    avg_delay_by_airline = avg_delay_by_airline.sort_values('Average Delay (minutes)', ascending=True)
+                    
+                    # Bar chart
+                    st.bar_chart(
+                        data=avg_delay_by_airline.set_index('Airline')['Average Delay (minutes)'],
+                        use_container_width=True
+                    )
+
+                    # Add new visualizations
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                        st.subheader("Top 10 Origin Cities with Highest Delays")
+                        origin_delays = (
+                            future_results_data_sample
+                            .groupby('ORIGIN_CITY')['predicted_delay']
+                            .agg(['mean', 'count'])
+                            .round(2)
+                            .sort_values('mean', ascending=False)
+                            .head(10)
+                            .reset_index()
+                        )
+                        origin_delays.columns = ['Origin City', 'Average Delay (minutes)', 'Number of Flights']
+                        
+                        st.bar_chart(
+                            data=origin_delays.set_index('Origin City')['Average Delay (minutes)'],
+                            use_container_width=True
+                        )
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    with col2:
+                        st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                        st.subheader("Top 10 Destination Cities with Highest Delays")
+                        dest_delays = (
+                            future_results_data_sample
+                            .groupby('DEST_CITY')['predicted_delay']
+                            .agg(['mean', 'count'])
+                            .round(2)
+                            .sort_values('mean', ascending=False)
+                            .head(10)
+                            .reset_index()
+                        )
+                        dest_delays.columns = ['Destination City', 'Average Delay (minutes)', 'Number of Flights']
+                        
+                        st.bar_chart(
+                            data=dest_delays.set_index('Destination City')['Average Delay (minutes)'],
+                            use_container_width=True
+                        )
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                    # Add temporal analysis
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    st.subheader("Average Delay by Date")
+                    
+                    # Convert FL_DATE to datetime if it's not already
+                    future_results_data_sample['FL_DATE'] = pd.to_datetime(future_results_data_sample['FL_DATE'])
+                    
+                    # Daily average delays
+                    daily_delays = (
+                        future_results_data_sample
+                        .groupby('FL_DATE')['predicted_delay']
+                        .agg(['mean', 'count'])
+                        .round(2)
+                        .reset_index()
+                    )
+                    daily_delays.columns = ['Date', 'Average Delay (minutes)', 'Number of Flights']
+                    
+                    st.line_chart(
+                        data=daily_delays.set_index('Date')['Average Delay (minutes)'],
+                        use_container_width=True
+                    )
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                    # Add route analysis
+                    st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                    st.subheader("Top 10 Routes with Highest Delays")
+                    
+                    # Create route column
+                    future_results_data_sample['Route'] = (
+                        future_results_data_sample['ORIGIN_CITY'] + ' → ' + 
+                        future_results_data_sample['DEST_CITY']
+                    )
+                    
+                    route_delays = (
+                        future_results_data_sample
+                        .groupby('Route')['predicted_delay']
+                        .agg(['mean', 'count'])
+                        .round(2)
+                        .sort_values('mean', ascending=False)
+                        .head(10)
+                        .reset_index()
+                    )
+                    route_delays.columns = ['Route', 'Average Delay (minutes)', 'Number of Flights']
+                    
+                    st.bar_chart(
+                        data=route_delays.set_index('Route')['Average Delay (minutes)'],
+                        use_container_width=True
+                    )
+                    
+                    # Display route details in a table
+                    st.markdown("#### Route Details")
+                    st.dataframe(
+                        route_delays,
+                        use_container_width=True
+                    )
+                    st.markdown('</div>', unsafe_allow_html=True)
+                
+                with tab2:
+                    st.subheader("Detailed Statistics by Airline")
+                    st.dataframe(avg_delay_by_airline, use_container_width=True)
+                    
+                    st.subheader("Sample Predictions")
+                    st.dataframe(
+                        future_results_data_sample.head(20), 
+                        use_container_width=True
+                    )
+
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+        st.error(f"Details: {repr(e)}")
+
+
+
+
+
+

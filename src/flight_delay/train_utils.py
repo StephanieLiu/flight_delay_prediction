@@ -11,6 +11,7 @@ from lightgbm import LGBMRegressor
 import logging
 import mlflow
 import os,sys
+import pandas as pd
 # from mlflow.models.signature import infer_signature
 
 # Get the current directory path
@@ -104,7 +105,7 @@ def train_model_with_tracking(experiment,regressor,regressor_name, X_train, y_tr
     mlflow.set_tracking_uri(experiment.tracking_server_uri)
     experiment_id = mlflow.set_experiment(experiment.name).experiment_id
     logger.info('Training and evaluation for regressor: %s', regressor)
-    with mlflow.start_run(experiment_id=experiment_id, run_name=f"run_{regressor_name}_{utils.truncated_uuid4()}"):
+    with mlflow.start_run(experiment_id=experiment_id, run_name=f"run_{regressor_name}_{utils.truncated_uuid4()}") as run:
         mlflow.set_tag("regressor model", regressor_name)
         try:
             model_pipeline = Pipeline([
@@ -140,3 +141,33 @@ def train_model_with_tracking(experiment,regressor,regressor_name, X_train, y_tr
             logger.exception('Error evaluating regressor %s', regressor_name)
 
     return results
+
+def predict_with_pipeline(data: pd.DataFrame, categorical_cols: list, numerical_cols: list, 
+                         time_cols: list, passthrough_cols: list) -> pd.DataFrame:
+    """
+    Transform a dataframe using the same preprocessing pipeline used in training.
+    Returns a pandas DataFrame instead of sparse matrix.
+    """
+    # Create and fit preprocessing pipeline
+    preprocess_pipeline = create_preprocess_pipeline(
+        categorical_cols=categorical_cols,
+        numerical_cols=numerical_cols,
+        time_cols=time_cols,
+        passthrough_cols=passthrough_cols
+    )
+    
+    # Transform the data
+    transformed_data = preprocess_pipeline.fit_transform(data)
+    
+    # Convert sparse matrix to DataFrame with feature names
+    feature_names = (
+        [f"{col}_scaled" for col in numerical_cols] +
+        preprocess_pipeline.named_transformers_['categorical'].get_feature_names_out(categorical_cols).tolist() +
+        [f"{col}_{feat}" for col in time_cols for feat in ['sin', 'cos']] +
+        passthrough_cols
+    )
+    
+    return pd.DataFrame(
+        transformed_data.toarray() if hasattr(transformed_data, 'toarray') else transformed_data,
+        columns=feature_names
+    )

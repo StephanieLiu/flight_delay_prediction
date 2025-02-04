@@ -1,29 +1,36 @@
 @import url('https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600;700&display=swap');
 
+* {
+    font-family: 'Readex Pro';
+}
 
-* {font-family: 'Readex Pro';}
+.prediction-box {
+    padding: 20px;
+    border-radius: 10px;
+    margin: 10px 0;
+}
 
-r { color: Red }
-g { color: Green }
+.on-time {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+}
 
-ul {list-style-type: none;}
+.minor-delay {
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+}
 
-hr {
-    margin-top: 0px;
-    margin-bottom: 5%;
+.major-delay {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
+
+.stButton>button {
+    width: 100%;
 }
 
 .css-18e3th9 {
-    padding-top: 0rem;
-    padding-bottom: 10rem;
-    padding-left: 5rem;
-    padding-right: 5rem;
-}
-.css-1d391kg {
-    padding-top: 3.5rem;
-    padding-right: 1rem;
-    padding-bottom: 3.5rem;
-    padding-left: 1rem;
+    padding: 2rem 5rem;
 }
 
 #MainMenu {visibility: hidden;}

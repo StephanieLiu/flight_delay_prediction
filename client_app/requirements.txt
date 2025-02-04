@@ -1,2 +1,13 @@
 python-dotenv
 streamlit~=1.28.2
+requests
+pandas
+fsspec
+s3fs
+lightgbm
+scikit-learn
+xgboost
+feature_engine
+
+
+mlflow
