@@ -20,6 +20,9 @@ services:
       - BANK_DB=s3://flight-delay/data/start.db
       - ECO_SOCIO_DF=s3://flight-delay/data/external/socio_economic_indices_data.csv
       - FUTURE_RES_DF=s3://flight-delay/data/flights_delay_dataset.csv
+      - MLFLOW_TRACKING_URI=http://mlflow:7000
+      - MLFLOW_TRACKING_USERNAME=${MLFLOW_TRACKING_USER}
+      - MLFLOW_TRACKING_PASSWORD=${MLFLOW_TRACKING_PASS}
     working_dir: /app/client_app
     command: streamlit run app.py
     depends_on:

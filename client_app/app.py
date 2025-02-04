@@ -27,6 +27,7 @@ import fsspec
 import requests
 import json
 
+
 current_directory = os.getcwd()
 
 # Get the grandparent directory
@@ -34,12 +35,18 @@ grandparent_dir = os.path.abspath(os.path.join(current_directory, '..', 'src'))
 sys.path.append(grandparent_dir)
 
 from flight_delay import train_utils,features
+from flight_delay.mlflow.registry import load_model
 
 SERVER_API_URL = os.environ.get('SERVER_API_URL')
 FUTURE_RES_DF = os.environ.get('FUTURE_RES_DF')
 FSSPEC_S3_KEY = os.environ.get('FSSPEC_S3_KEY')
 FSSPEC_S3_SECRET = os.environ.get('FSSPEC_S3_SECRET')
 FSSPEC_S3_ENDPOINT_URL = os.environ.get('FSSPEC_S3_ENDPOINT_URL')
+
+# Add MLflow environment variables
+MLFLOW_TRACKING_URI = os.environ.get('MLFLOW_TRACKING_URI')
+MLFLOW_TRACKING_USERNAME = os.environ.get('MLFLOW_TRACKING_USERNAME')
+MLFLOW_TRACKING_PASSWORD = os.environ.get('MLFLOW_TRACKING_PASSWORD')
 
 # --- APP SETTINGS ---
 page_title = 'Flight Delay Prediction'
@@ -56,11 +63,11 @@ with open('styles/main.css') as f:
 st.title('Flight Delay Prediction')
 
 # Debug information
-st.write("Debug Information:")
+st.write("Getting data from:")
 st.write(f"Data path: {FUTURE_RES_DF}")
 st.write(f"MinIO endpoint: {FSSPEC_S3_ENDPOINT_URL}")
-st.write(f"Access key exists: {'Yes' if FSSPEC_S3_KEY else 'No'}")
-st.write(f"Secret key exists: {'Yes' if FSSPEC_S3_SECRET else 'No'}")
+# st.write(f"Access key exists: {'Yes' if FSSPEC_S3_KEY else 'No'}")
+# st.write(f"Secret key exists: {'Yes' if FSSPEC_S3_SECRET else 'No'}")
 
 @st.cache_resource
 def connect_to_data(data_path):
@@ -74,18 +81,18 @@ def connect_to_data(data_path):
         )
         
         # List buckets to verify connection
-        st.write("Available buckets:", fs.ls(''))
+        #st.write("Available buckets:", fs.ls(''))
         
         # Get bucket and path
         bucket = data_path.split('/')[2]
         path = '/'.join(data_path.split('/')[3:])
         
         # List contents of bucket
-        st.write(f"Contents of bucket '{bucket}':", fs.ls(bucket))
+        #st.write(f"Contents of bucket '{bucket}':", fs.ls(bucket))
         
         # Full path for debugging
         full_path = f"{bucket}/{path}"
-        st.write(f"Attempting to open: {full_path}")
+        #st.write(f"Attempting to open: {full_path}")
         
         # Read data in chunks with a progress bar
         with st.spinner('Loading data... This might take a while...'):
@@ -104,40 +111,27 @@ def connect_to_data(data_path):
         st.error(f"Full error details: {repr(e)}")
         raise
 
-def check_model_endpoint(url: str) -> bool:
+
+def get_model_predictions(data: pd.DataFrame):
     """
-    Check if the model endpoint is available and responding.
-    Returns True if the model is available, False otherwise.
+    Get predictions using model loaded directly from MLflow
     """
     try:
-        # Remove '/infer' from the URL to get the model endpoint
-        model_url = url.replace('/infer', '')
-        
-        # Make a GET request to the model metadata endpoint
-        response = requests.get(
-            model_url,
-            timeout=10,
-            headers={"Content-Type": "application/json"}
+        # Load the model from MLflow registry
+        model = load_model(
+            registry_uri=MLFLOW_TRACKING_URI,
+            model_name="lightGBM-production",  # Use your model name
+            model_alias="active"  # Or specific version if needed
         )
         
-        if response.status_code == 200:
-            metadata = response.json()
-            st.write("Debug: Model metadata:", metadata)
-            return True
-        else:
-            st.error(f"Model endpoint returned status code: {response.status_code}")
-            st.error(f"Response: {response.text}")
-            return False
-            
-    except requests.exceptions.Timeout:
-        st.error("Model endpoint check timed out")
-        return False
-    except requests.exceptions.ConnectionError:
-        st.error("Could not connect to model endpoint")
-        return False
+        # Make predictions
+        predictions = model.predict(data)
+        return predictions
+        
     except Exception as e:
-        st.error(f"Error checking model endpoint: {str(e)}")
-        return False
+        st.error(f"Error loading model from MLflow: {str(e)}")
+        st.error(f"Full error details: {repr(e)}")
+        raise
 
 try:
     future_results_data = connect_to_data(FUTURE_RES_DF)
@@ -157,12 +151,12 @@ try:
     features_list = numerical_cols + categorical_cols + time_cols + passthrough_cols
 
 
-    st.write("Debug: Available columns:", future_results_data.columns.tolist())
-    st.write("Debug: Required columns:")
-    st.write("- Numerical:", numerical_cols)
-    st.write("- Categorical:", categorical_cols)
-    st.write("- Time:", time_cols)
-    st.write("- Passthrough:", passthrough_cols)
+    # st.write("Debug: Available columns:", future_results_data.columns.tolist())
+    # st.write("Debug: Required columns:")
+    # st.write("- Numerical:", numerical_cols)
+    # st.write("- Categorical:", categorical_cols)
+    # st.write("- Time:", time_cols)
+    # st.write("- Passthrough:", passthrough_cols)
 
     # Verify all required columns exist
     missing_cols = []
@@ -174,83 +168,56 @@ try:
         st.error(f"Missing required columns: {missing_cols}")
     else:
         try:
-            with st.spinner('Transforming data...'):
-                future_results_data_sample = future_results_data.sample(10)
+            with st.spinner('Making predictions...'):
+                future_results_data_sample = future_results_data.sample(1000)
+                
+                # Instead of making API call, use MLflow directly
+                predictions = get_model_predictions(future_results_data_sample)
+                
+                # Add predictions to the original data
+                future_results_data_sample['predicted_delay'] = predictions
+                
+                # Display results
+                st.success(f"Successfully made predictions!")
 
-                future_results_data_transformed = train_utils.predict_with_pipeline(
-                    future_results_data_sample,
-                    categorical_cols, 
-                    numerical_cols, 
-                    time_cols, 
-                    passthrough_cols
+                # Display predictions table
+                st.subheader("Sample Predictions")
+                st.dataframe(
+                    future_results_data_sample.head(20), 
+                    use_container_width=True
+                )
+
+                # Create and display average delay by airline chart
+                st.subheader("Average Predicted Delay by Airline")
+                
+                # Calculate average delay by airline
+                avg_delay_by_airline = (
+                    future_results_data_sample
+                    .groupby('AIRLINE')['predicted_delay']
+                    .agg(['mean', 'count'])
+                    .round(2)
+                    .reset_index()
+                )
+                avg_delay_by_airline.columns = ['Airline', 'Average Delay (minutes)', 'Number of Flights']
+                
+                # Sort by average delay
+                avg_delay_by_airline = avg_delay_by_airline.sort_values('Average Delay (minutes)', ascending=True)
+                
+                # Create bar chart
+                st.bar_chart(
+                    data=avg_delay_by_airline.set_index('Airline')['Average Delay (minutes)'],
+                    use_container_width=True
                 )
                 
-                # Display transformed data
-                st.subheader("First 10 Rows of transformed Flight Data")
-                st.dataframe(future_results_data_transformed.head(10), use_container_width=True)
-                
-                # Show transformed data shape
-                st.write(f"Transformed data shape: {future_results_data_transformed.shape}")
-
-                # Add this after loading the data and before making predictions
-                st.write("Checking model endpoint...")
-                if not check_model_endpoint(SERVER_API_URL):
-                    st.error("Model is not available. Please check the model deployment.")
-                    st.stop()
-                else:
-                    st.success("Model endpoint is available!")
-
-                # Make predictions using the model
-                st.write("Debug: Server URL:", SERVER_API_URL)
-                
-                try:
-                    # Prepare data for prediction
-                    prediction_data = future_results_data_transformed.to_dict(orient='records')
-                    
-                    # Debug request information
-                    st.write("Debug: Making prediction request")
-                    st.write("URL:", SERVER_API_URL)
-                    st.write("Request data shape:", len(prediction_data))
-                    st.write("Sample request data:", prediction_data[0])
-                    
-                    # Make prediction request
-                    response = requests.post(
-                        SERVER_API_URL,
-                        json={"inputs": prediction_data},
-                        headers={"Content-Type": "application/json"},
-                        timeout=30  # Add timeout
-                    )
-                    st.write("Debug: Response status code:", response.status_code)
-                    st.write("Debug: Response headers:", dict(response.headers))
-                    
-                    if response.status_code == 200:
-                        predictions = response.json()
-                        st.success("Predictions received successfully!")
-                        
-                        # Add predictions to the original data
-                        future_results_data_sample['predicted_delay'] = predictions['predictions']
-                        
-                        # Display results
-                        st.subheader("Predictions")
-                        st.dataframe(
-                            future_results_data_sample[['OP_CARRIER', 'ORIGIN', 'DEST', 'predicted_delay']]
-                            .head(10), 
-                            use_container_width=True
-                        )
-                    else:
-                        st.error(f"Error from server: {response.status_code}")
-                        st.error(f"Response: {response.text}")
-                    
-                except requests.exceptions.Timeout:
-                    st.error("Request timed out. The server took too long to respond.")
-                except requests.exceptions.ConnectionError:
-                    st.error("Could not connect to the server. Please check if the server is running.")
-                except Exception as e:
-                    st.error(f"Error making prediction request: {str(e)}")
-                    st.error(f"Full error details: {repr(e)}")
+                # Also display the numerical values
+                st.write("Detailed Statistics by Airline:")
+                st.dataframe(
+                    avg_delay_by_airline,
+                    use_container_width=True
+                )
 
         except Exception as e:
-            st.error(f"Error during transformation: {str(e)}")
+            st.error(f"Error during prediction: {str(e)}")
             st.error(f"Full error details: {repr(e)}")
 
 except Exception as e:
